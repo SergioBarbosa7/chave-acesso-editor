@@ -8,17 +8,24 @@ import {
   findUfByCode,
   issuerDocumentMeta,
   normalizeAccessKey,
+  normalizeSearchText,
   parseAccessKey,
+  serializeFields,
+  validateFields,
   validateAccessKey
 } from "./accessKey";
 
 describe("UF dictionary", () => {
-  test("resolves Sao Paulo by UF code", () => {
-    expect(findUfByCode("35")).toEqual({ code: "35", abbreviation: "SP", name: "Sao Paulo" });
+  test("resolves São Paulo by UF code", () => {
+    expect(findUfByCode("35")).toEqual({ code: "35", abbreviation: "SP", name: "São Paulo" });
   });
 
   test("returns null for unknown UF code", () => {
     expect(findUfByCode("00")).toBeNull();
+  });
+
+  test("normalizes text search ignoring accents", () => {
+    expect(normalizeSearchText("São Paulo")).toBe("sao paulo");
   });
 });
 
@@ -78,8 +85,8 @@ describe("builder and document interpretation", () => {
       issueMonth: "11",
       issuerDocument: "17081562000100",
       documentModel: "55",
-      series: "003",
-      documentNumber: "000005181",
+      series: "3",
+      documentNumber: "5181",
       emissionType: "1",
       numericCode: "39472620",
       checkDigit: "0"
@@ -94,20 +101,61 @@ describe("builder and document interpretation", () => {
         issueMonth: "11",
         issuerDocument: "17081562000100",
         documentModel: "55",
-        series: "003",
-        documentNumber: "000005181",
+        series: "3",
+        documentNumber: "5181",
         emissionType: "1",
         numericCode: "39472620",
         checkDigit: "5"
       });
   });
 
-  test("detects CPF emitter using right padding", () => {
-    expect(issuerDocumentMeta("12345678901000")).toEqual({
+  test("detects CPF emitter without exposing right padding", () => {
+    expect(issuerDocumentMeta("12345678901")).toEqual({
       usesCpf: true,
       label: "CPF Emitente",
       displayValue: "12345678901"
     });
+  });
+
+  test("serializes display fields with internal padding", () => {
+    expect(serializeFields({
+      ufCode: "42",
+      issueYear: "24",
+      issueMonth: "11",
+      issuerDocument: "12345678901",
+      documentModel: "55",
+      series: "3",
+      documentNumber: "5181",
+      emissionType: "1",
+      numericCode: "39472620",
+      checkDigit: "5"
+    })).toEqual({
+      ufCode: "42",
+      issueYear: "24",
+      issueMonth: "11",
+      issuerDocument: "12345678901000",
+      documentModel: "55",
+      series: "003",
+      documentNumber: "000005181",
+      emissionType: "1",
+      numericCode: "39472620",
+      checkDigit: "5"
+    });
+  });
+
+  test("does not right pad a partial CPF while the field is incomplete", () => {
+    expect(serializeFields({
+      ufCode: "42",
+      issueYear: "24",
+      issueMonth: "11",
+      issuerDocument: "123",
+      documentModel: "55",
+      series: "3",
+      documentNumber: "5181",
+      emissionType: "1",
+      numericCode: "39472620",
+      checkDigit: ""
+    }).issuerDocument).toBe("123");
   });
 });
 
@@ -135,6 +183,26 @@ describe("validation", () => {
       fieldErrors: {
         ufCode: "Codigo da UF invalido",
         issueYearMonth: "Ano/mes de emissao invalido",
+        checkDigit: "Digito verificador invalido"
+      }
+    });
+  });
+
+  test("revalidates the check digit from edited fields", () => {
+    expect(validateFields({
+      ufCode: "42",
+      issueYear: "24",
+      issueMonth: "11",
+      issuerDocument: "17081562000100",
+      documentModel: "55",
+      series: "3",
+      documentNumber: "5181",
+      emissionType: "1",
+      numericCode: "39472620",
+      checkDigit: "4"
+    })).toEqual({
+      valid: false,
+      fieldErrors: {
         checkDigit: "Digito verificador invalido"
       }
     });

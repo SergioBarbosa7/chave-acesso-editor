@@ -38,3 +38,130 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+.field-list {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.field-list-item {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem 1.25rem;
+}
+
+.field-list-item + .field-list-item {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.field-list-label {
+  padding-top: 0.5rem;
+  color: #516072;
+}
+
+.field-list-value {
+  min-width: 0;
+}
+
+.uf-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.uf-code-input {
+  max-width: 5rem;
+}
+.uf-row .form-select {
+  flex: 1 1 auto;
+}
+
+.uf-picker {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.uf-picker-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.uf-picker-input {
+  width: 100%;
+}
+
+.uf-picker-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: 12rem;
+  overflow-y: auto;
+  padding: 0.35rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+}
+
+.uf-picker-option {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  text-align: left;
+}
+
+.uf-picker-option:hover,
+.uf-picker-option.is-active {
+  background: rgba(13, 110, 253, 0.08);
+}
+
+.uf-picker-empty {
+  padding: 0.6rem 0.75rem;
+  color: #6c757d;
+}
+
+.check-digit-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.check-digit-row .form-control {
+  max-width: 5rem;
+}
+
+@media (max-width: 767.98px) {
+  .field-list-item {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .field-list-label {
+    padding-top: 0;
+  }
+
+  .check-digit-row {
+    flex-direction: column;
+  }
+
+  .uf-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .uf-code-input {
+    max-width: none;
+  }
+
+  .check-digit-row .form-control {
+    max-width: none;
+  }
+}

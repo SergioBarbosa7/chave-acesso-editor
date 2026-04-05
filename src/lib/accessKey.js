@@ -6,30 +6,37 @@ export const UF_DICTIONARY = Object.freeze({
   "12": { code: "12", abbreviation: "AC", name: "Acre" },
   "13": { code: "13", abbreviation: "AM", name: "Amazonas" },
   "14": { code: "14", abbreviation: "RR", name: "Roraima" },
-  "15": { code: "15", abbreviation: "PA", name: "Para" },
+  "15": { code: "15", abbreviation: "PA", name: "Pará" },
   "16": { code: "16", abbreviation: "AP", name: "Amapa" },
   "17": { code: "17", abbreviation: "TO", name: "Tocantins" },
-  "21": { code: "21", abbreviation: "MA", name: "Maranhao" },
-  "22": { code: "22", abbreviation: "PI", name: "Piaui" },
-  "23": { code: "23", abbreviation: "CE", name: "Ceara" },
+  "21": { code: "21", abbreviation: "MA", name: "Maranhão" },
+  "22": { code: "22", abbreviation: "PI", name: "Piauí" },
+  "23": { code: "23", abbreviation: "CE", name: "Ceará" },
   "24": { code: "24", abbreviation: "RN", name: "Rio Grande do Norte" },
-  "25": { code: "25", abbreviation: "PB", name: "Paraiba" },
+  "25": { code: "25", abbreviation: "PB", name: "Paraíba" },
   "26": { code: "26", abbreviation: "PE", name: "Pernambuco" },
   "27": { code: "27", abbreviation: "AL", name: "Alagoas" },
   "28": { code: "28", abbreviation: "SE", name: "Sergipe" },
   "29": { code: "29", abbreviation: "BA", name: "Bahia" },
   "31": { code: "31", abbreviation: "MG", name: "Minas Gerais" },
-  "32": { code: "32", abbreviation: "ES", name: "Espirito Santo" },
+  "32": { code: "32", abbreviation: "ES", name: "Espírito Santo" },
   "33": { code: "33", abbreviation: "RJ", name: "Rio de Janeiro" },
-  "35": { code: "35", abbreviation: "SP", name: "Sao Paulo" },
-  "41": { code: "41", abbreviation: "PR", name: "Parana" },
+  "35": { code: "35", abbreviation: "SP", name: "São Paulo" },
+  "41": { code: "41", abbreviation: "PR", name: "Paraná" },
   "42": { code: "42", abbreviation: "SC", name: "Santa Catarina" },
   "43": { code: "43", abbreviation: "RS", name: "Rio Grande do Sul" },
   "50": { code: "50", abbreviation: "MS", name: "Mato Grosso do Sul" },
   "51": { code: "51", abbreviation: "MT", name: "Mato Grosso" },
-  "52": { code: "52", abbreviation: "GO", name: "Goias" },
+  "52": { code: "52", abbreviation: "GO", name: "Goiás" },
   "53": { code: "53", abbreviation: "DF", name: "Distrito Federal" }
 });
+
+export function normalizeSearchText(value) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
 
 export const DOCUMENT_MODEL_DICTIONARY = Object.freeze({
   "55": { code: "55", name: "NFe" },
@@ -56,6 +63,46 @@ export const FIELD_LENGTHS = Object.freeze({
   numericCode: 8,
   checkDigit: 1
 });
+
+function padLeft(value, length) {
+  return value.padStart(length, "0");
+}
+
+function padRight(value, length) {
+  return value.padEnd(length, "0");
+}
+
+function trimLeftPadding(value) {
+  if (!value) {
+    return "";
+  }
+
+  const trimmed = value.replace(/^0+/, "");
+  return trimmed || "0";
+}
+
+function toIssuerStorageValue(value) {
+  const normalized = normalizeAccessKey(value);
+
+  if (normalized.length === 11) {
+    return padRight(normalized, 14);
+  }
+
+  return normalized.slice(0, 14);
+}
+
+function toDisplayFields(fields) {
+  const sanitized = sanitizeFields(fields);
+
+  return {
+    ...sanitized,
+    issuerDocument: sanitized.issuerDocument.length === 14 && sanitized.issuerDocument.endsWith("000")
+      ? sanitized.issuerDocument.slice(0, 11)
+      : sanitized.issuerDocument,
+    series: trimLeftPadding(sanitized.series),
+    documentNumber: trimLeftPadding(sanitized.documentNumber)
+  };
+}
 
 export function normalizeAccessKey(rawValue) {
   return (rawValue ?? "").replace(/\D/g, "");
@@ -144,7 +191,7 @@ export function makeEmptyFields() {
 }
 
 export function fieldsFromParsedAccessKey(parsed) {
-  return {
+  return toDisplayFields({
     ufCode: parsed.ufCode,
     issueYear: parsed.issueYear,
     issueMonth: parsed.issueMonth,
@@ -155,11 +202,11 @@ export function fieldsFromParsedAccessKey(parsed) {
     emissionType: parsed.emissionType,
     numericCode: parsed.numericCode,
     checkDigit: parsed.checkDigit
-  };
+  });
 }
 
 export function fieldsFromPartialKey(normalizedKey) {
-  return {
+  return toDisplayFields({
     ufCode: normalizedKey.slice(0, 2),
     issueYear: normalizedKey.slice(2, 4),
     issueMonth: normalizedKey.slice(4, 6),
@@ -170,12 +217,26 @@ export function fieldsFromPartialKey(normalizedKey) {
     emissionType: normalizedKey.slice(34, 35),
     numericCode: normalizedKey.slice(35, 43),
     checkDigit: normalizedKey.slice(43, 44)
-  };
+  });
 }
 
 export function sanitizeFieldValue(fieldName, value) {
+  const normalized = normalizeAccessKey(value);
+
+  if (fieldName === "issuerDocument") {
+    return normalized.slice(0, 14);
+  }
+
+  if (fieldName === "series") {
+    return normalized.slice(0, 3);
+  }
+
+  if (fieldName === "documentNumber") {
+    return normalized.slice(0, 9);
+  }
+
   const length = FIELD_LENGTHS[fieldName];
-  return normalizeAccessKey(value).slice(0, length);
+  return normalized.slice(0, length);
 }
 
 export function sanitizeFields(fields) {
@@ -184,17 +245,34 @@ export function sanitizeFields(fields) {
   );
 }
 
-export function buildBaseKey(fields) {
+export function serializeFields(fields) {
   const sanitized = sanitizeFields(fields);
-  return sanitized.ufCode
-    + sanitized.issueYear
-    + sanitized.issueMonth
-    + sanitized.issuerDocument
-    + sanitized.documentModel
-    + sanitized.series
-    + sanitized.documentNumber
-    + sanitized.emissionType
-    + sanitized.numericCode;
+
+  return {
+    ...sanitized,
+    issuerDocument: toIssuerStorageValue(sanitized.issuerDocument),
+    series: padLeft(sanitized.series, FIELD_LENGTHS.series),
+    documentNumber: padLeft(sanitized.documentNumber, FIELD_LENGTHS.documentNumber)
+  };
+}
+
+export function buildBaseKey(fields) {
+  const serialized = serializeFields(fields);
+  const baseKey = serialized.ufCode
+    + serialized.issueYear
+    + serialized.issueMonth
+    + serialized.issuerDocument
+    + serialized.documentModel
+    + serialized.series
+    + serialized.documentNumber
+    + serialized.emissionType
+    + serialized.numericCode;
+
+  if (baseKey.length !== BASE_KEY_LENGTH) {
+    throw new Error("Base key must contain exactly 43 digits");
+  }
+
+  return baseKey;
 }
 
 export function buildAccessKeyWithRecalculatedCheckDigit(fields) {
@@ -203,11 +281,11 @@ export function buildAccessKeyWithRecalculatedCheckDigit(fields) {
 
 export function issuerDocumentMeta(issuerDocument) {
   const normalized = sanitizeFieldValue("issuerDocument", issuerDocument);
-  const usesCpf = normalized.length === 14 && normalized.endsWith("000");
+  const usesCpf = normalized.length > 0 && normalized.length <= 11;
   return {
     usesCpf,
     label: usesCpf ? "CPF Emitente" : "CNPJ Emitente",
-    displayValue: usesCpf ? normalized.slice(0, 11) : normalized
+    displayValue: normalized
   };
 }
 
@@ -236,6 +314,41 @@ export function validateAccessKey(rawValue) {
   return {
     valid: Object.keys(fieldErrors).length === 0,
     hasLengthError: false,
+    fieldErrors
+  };
+}
+
+export function validateFields(fields) {
+  const sanitized = sanitizeFields(fields);
+  const fieldErrors = {};
+
+  if (sanitized.ufCode.length === FIELD_LENGTHS.ufCode && !findUfByCode(sanitized.ufCode)) {
+    fieldErrors.ufCode = "Codigo da UF invalido";
+  }
+
+  if (
+    sanitized.issueYear.length === FIELD_LENGTHS.issueYear
+    && sanitized.issueMonth.length === FIELD_LENGTHS.issueMonth
+  ) {
+    const month = Number(sanitized.issueMonth);
+    if (Number.isNaN(month) || month < 1 || month > 12) {
+      fieldErrors.issueYearMonth = "Ano/mes de emissao invalido";
+    }
+  }
+
+  if (sanitized.checkDigit) {
+    try {
+      const expectedCheckDigit = String(calculateCheckDigit(buildBaseKey(sanitized)));
+      if (sanitized.checkDigit !== expectedCheckDigit) {
+        fieldErrors.checkDigit = "Digito verificador invalido";
+      }
+    } catch {
+      // Ignore while the base key is incomplete.
+    }
+  }
+
+  return {
+    valid: Object.keys(fieldErrors).length === 0,
     fieldErrors
   };
 }

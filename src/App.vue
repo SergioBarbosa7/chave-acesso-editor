@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import {
   ACCESS_KEY_LENGTH,
   FIELD_LENGTHS,
+  UF_DICTIONARY,
   buildAccessKeyWithRecalculatedCheckDigit,
   fieldsFromPartialKey,
   fieldsFromParsedAccessKey,
@@ -11,20 +12,41 @@ import {
   issuerDocumentMeta,
   makeEmptyFields,
   normalizeAccessKey,
+  normalizeSearchText,
   parseAccessKey,
   sanitizeFieldValue,
   sanitizeFields,
+  serializeFields,
+  validateFields,
   validateAccessKey
 } from "./lib/accessKey";
 
 const accessKeyInput = ref("");
+const ufPickerOpen = ref(false);
+const ufQuery = ref("");
 const fields = reactive(makeEmptyFields());
 
 const normalizedAccessKey = computed(() => normalizeAccessKey(accessKeyInput.value));
 
 const issuerMeta = computed(() => issuerDocumentMeta(fields.issuerDocument));
+const ufOptions = Object.values(UF_DICTIONARY);
+const selectedUf = computed(() => findUfByCode(fields.ufCode));
+const filteredUfOptions = computed(() => {
+  const query = normalizeSearchText(ufQuery.value.trim());
+
+  if (!query) {
+    return ufOptions;
+  }
+
+  return ufOptions.filter((uf) => {
+    const label = normalizeSearchText(`${uf.abbreviation} ${uf.name} ${uf.code}`);
+    return label.includes(query);
+  });
+});
 
 const validationResult = computed(() => validateAccessKey(accessKeyInput.value));
+const fieldValidationResult = computed(() => validateFields(fields));
+const hasFieldValidationErrors = computed(() => Object.keys(fieldValidationResult.value.fieldErrors).length > 0);
 
 const parsedAccessKey = computed(() => {
   if (normalizedAccessKey.value.length !== ACCESS_KEY_LENGTH) {
@@ -43,7 +65,7 @@ const statusVariant = computed(() => {
     return "bg-light border";
   }
 
-  if (validationResult.value.hasLengthError || !validationResult.value.valid) {
+  if (validationResult.value.hasLengthError || !validationResult.value.valid || hasFieldValidationErrors.value) {
     return "bg-danger-subtle border border-danger-subtle";
   }
 
@@ -59,11 +81,11 @@ const statusTitle = computed(() => {
     return "Tamanho invalido";
   }
 
-  if (!validationResult.value.valid) {
-    return "Campos invalidos encontrados";
+  if (!validationResult.value.valid || hasFieldValidationErrors.value) {
+    return "Campos inválidos encontrados";
   }
 
-  return "Chave valida";
+  return "Chave válida";
 });
 
 const validationMessages = computed(() => {
@@ -72,51 +94,50 @@ const validationMessages = computed(() => {
   }
 
   if (validationResult.value.hasLengthError) {
-    return ["A chave deve possuir exatamente 44 digitos apos remover a mascara."];
+    return ["A chave deve possuir exatamente 44 dígitos após remover a máscara."];
   }
 
-  const messages = Object.values(validationResult.value.fieldErrors);
+  const messages = Object.values({
+    ...validationResult.value.fieldErrors,
+    ...fieldValidationResult.value.fieldErrors
+  });
   if (messages.length > 0) {
     return messages;
   }
-
-  const uf = parsedAccessKey.value ? findUfByCode(parsedAccessKey.value.ufCode) : null;
-  return uf ? [`UF identificada: ${uf.abbreviation} - ${uf.name}`] : [];
+  
+  return [];
 });
 
 const fieldErrorMap = computed(() => {
   const errors = {};
-  if (validationResult.value.hasLengthError) {
-    return errors;
+
+  if (fieldValidationResult.value.fieldErrors.ufCode) {
+    errors.ufCode = fieldValidationResult.value.fieldErrors.ufCode;
   }
 
-  if (validationResult.value.fieldErrors.ufCode) {
-    errors.ufCode = validationResult.value.fieldErrors.ufCode;
+  if (fieldValidationResult.value.fieldErrors.issueYearMonth) {
+    errors.issueYear = fieldValidationResult.value.fieldErrors.issueYearMonth;
+    errors.issueMonth = fieldValidationResult.value.fieldErrors.issueYearMonth;
   }
 
-  if (validationResult.value.fieldErrors.issueYearMonth) {
-    errors.issueYear = validationResult.value.fieldErrors.issueYearMonth;
-    errors.issueMonth = validationResult.value.fieldErrors.issueYearMonth;
-  }
-
-  if (validationResult.value.fieldErrors.checkDigit) {
-    errors.checkDigit = validationResult.value.fieldErrors.checkDigit;
+  if (fieldValidationResult.value.fieldErrors.checkDigit) {
+    errors.checkDigit = fieldValidationResult.value.fieldErrors.checkDigit;
   }
 
   return errors;
 });
 
 const fieldDescriptors = [
-  { name: "ufCode", label: "UF", cols: "col-md-2" },
-  { name: "issueYear", label: "Ano", cols: "col-md-2" },
-  { name: "issueMonth", label: "Mes", cols: "col-md-2" },
-  { name: "issuerDocument", label: () => issuerMeta.value.label, cols: "col-md-6" },
-  { name: "documentModel", label: "Modelo", cols: "col-md-2" },
-  { name: "series", label: "Serie", cols: "col-md-2" },
-  { name: "documentNumber", label: "Numero", cols: "col-md-3" },
-  { name: "emissionType", label: "Tipo de emissao", cols: "col-md-2" },
-  { name: "numericCode", label: "Codigo numerico", cols: "col-md-3" },
-  { name: "checkDigit", label: "DV", cols: "col-md-2" }
+  { name: "ufCode", label: "UF" },
+  { name: "issueYear", label: "Ano" },
+  { name: "issueMonth", label: "Mês" },
+  { name: "issuerDocument", label: () => issuerMeta.value.label },
+  { name: "documentModel", label: "Modelo" },
+  { name: "series", label: "Série" },
+  { name: "documentNumber", label: "Número" },
+  { name: "emissionType", label: "Tipo de emissão" },
+  { name: "numericCode", label: "Código numérico" },
+  { name: "checkDigit", label: "DV" }
 ];
 
 function syncFieldsFromKey(rawValue) {
@@ -125,26 +146,32 @@ function syncFieldsFromKey(rawValue) {
 
   if (!normalized) {
     Object.assign(fields, makeEmptyFields());
+    ufQuery.value = "";
     return;
   }
 
   if (normalized.length === ACCESS_KEY_LENGTH) {
     Object.assign(fields, fieldsFromParsedAccessKey(parseAccessKey(normalized)));
+    syncUfQueryFromCode();
     return;
   }
 
   Object.assign(fields, sanitizeFields(fieldsFromPartialKey(normalized)));
+  syncUfQueryFromCode();
 }
 
 function syncKeyFromFields(changedFieldName) {
   fields[changedFieldName] = sanitizeFieldValue(changedFieldName, fields[changedFieldName]);
   const sanitized = sanitizeFields(fields);
 
+  if (changedFieldName === "ufCode") {
+    syncUfQueryFromCode(sanitized.ufCode);
+  }
+
   if (changedFieldName !== "checkDigit") {
     try {
       const rebuiltKey = buildAccessKeyWithRecalculatedCheckDigit(sanitized);
       accessKeyInput.value = rebuiltKey;
-      Object.assign(fields, fieldsFromParsedAccessKey(parseAccessKey(rebuiltKey)));
       return;
     } catch {
       // Fall through to partial reconstruction while the key is incomplete.
@@ -152,7 +179,58 @@ function syncKeyFromFields(changedFieldName) {
   }
 
   Object.assign(fields, sanitized);
-  accessKeyInput.value = Object.values(sanitized).join("");
+  accessKeyInput.value = Object.values(serializeFields(sanitized)).join("");
+}
+
+function recalculateCheckDigit() {
+  try {
+    const rebuiltKey = buildAccessKeyWithRecalculatedCheckDigit(fields);
+    accessKeyInput.value = rebuiltKey;
+    Object.assign(fields, fieldsFromParsedAccessKey(parseAccessKey(rebuiltKey)));
+    syncUfQueryFromCode();
+  } catch {
+    Object.assign(fields, sanitizeFields(fields));
+    accessKeyInput.value = Object.values(serializeFields(fields)).join("");
+  }
+}
+
+function syncUfFromSelect(value) {
+  fields.ufCode = value;
+  ufPickerOpen.value = false;
+  syncUfQueryFromCode(value);
+  syncKeyFromFields("ufCode");
+}
+
+function formatUfOption(uf) {
+  return `${uf.abbreviation} - ${uf.name} (${uf.code})`;
+}
+
+function syncUfQueryFromCode(code = fields.ufCode) {
+  const uf = findUfByCode(code);
+  ufQuery.value = uf ? formatUfOption(uf) : "";
+}
+
+function openUfPicker() {
+  ufPickerOpen.value = true;
+  ufQuery.value = selectedUf.value ? formatUfOption(selectedUf.value) : "";
+}
+
+function handleUfQueryInput(value) {
+  ufQuery.value = value;
+  ufPickerOpen.value = true;
+}
+
+function closeUfPicker() {
+  ufPickerOpen.value = false;
+  syncUfQueryFromCode();
+}
+
+function selectFirstFilteredUf() {
+  if (filteredUfOptions.value.length > 0) {
+    syncUfFromSelect(filteredUfOptions.value[0].code);
+  } else {
+    closeUfPicker();
+  }
 }
 </script>
 
@@ -162,14 +240,10 @@ function syncKeyFromFields(changedFieldName) {
       <div class="card-body p-4 p-lg-5">
         <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
           <div>
-            <div class="section-label text-secondary mb-2">Vue Frontend</div>
             <h1 class="h3 mb-2">Editor de Chave de Acesso</h1>
             <p class="text-secondary mb-0">
-              Interface unica para colar, editar, validar e reconstruir a chave em tempo real.
+              Interface única para colar, editar, validar e reconstruir a chave em tempo real.
             </p>
-          </div>
-          <div class="small text-secondary">
-            Bootstrap para layout, Vue para comportamento ao vivo
           </div>
         </div>
 
@@ -186,7 +260,7 @@ function syncKeyFromFields(changedFieldName) {
             @paste="() => requestAnimationFrame(() => syncFieldsFromKey(accessKeyInput))"
           >
           <div class="form-text">
-            Aceita entrada com ou sem mascara. Ao colar ou digitar, caracteres nao numericos sao removidos automaticamente.
+            Aceita entrada com ou sem máscara. Ao colar ou digitar, caracteres não numéricos são removidos automaticamente.
           </div>
         </section>
 
@@ -199,49 +273,104 @@ function syncKeyFromFields(changedFieldName) {
             </ul>
             <div class="small text-secondary mt-3" v-if="normalizedAccessKey">
               {{ normalizedAccessKey.length }} de 44 digitos preenchidos
+              
             </div>
           </div>
         </section>
 
         <section>
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="mb-3">
             <h2 class="h5 mb-0">Campos da chave</h2>
-            <div class="small text-secondary">
-              Exibicao e edicao unificadas
-            </div>
           </div>
 
-          <div class="row g-3">
+          <div class="field-list rounded-4 border overflow-hidden">
             <div
               v-for="descriptor in fieldDescriptors"
               :key="descriptor.name"
-              :class="descriptor.cols"
+              class="field-list-item"
             >
-              <label class="form-label" :for="descriptor.name">
+              <label class="field-list-label fw-semibold" :for="descriptor.name">
                 {{ typeof descriptor.label === "function" ? descriptor.label() : descriptor.label }}
               </label>
-              <input
-                :id="descriptor.name"
-                v-model="fields[descriptor.name]"
-                class="form-control monospace-value"
-                :class="{ 'is-invalid': fieldErrorMap[descriptor.name] }"
-                inputmode="numeric"
-                :maxlength="FIELD_LENGTHS[descriptor.name]"
-                @input="syncKeyFromFields(descriptor.name)"
-              >
-              <div class="invalid-feedback">
-                {{ fieldErrorMap[descriptor.name] }}
-              </div>
-              <div
-                v-if="descriptor.name === 'issuerDocument'"
-                class="form-text"
-              >
-                <template v-if="issuerMeta.usesCpf">
-                  CPF detectado. A visualizacao utiliza os 11 digitos significativos.
+              <div class="field-list-value">
+                <template v-if="descriptor.name === 'ufCode'">
+                  <div class="uf-row">
+                    <input
+                      :id="descriptor.name"
+                      v-model="fields[descriptor.name]"
+                      class="form-control monospace-value uf-code-input"
+                      :class="{ 'is-invalid': fieldErrorMap[descriptor.name] }"
+                      inputmode="numeric"
+                      :maxlength="FIELD_LENGTHS[descriptor.name]"
+                      @input="syncKeyFromFields(descriptor.name)"
+                    >
+                    <div
+                      class="uf-picker"
+                      tabindex="0"
+                      @focusout="closeUfPicker"
+                    >
+                      <input
+                        class="form-control uf-picker-input"
+                        :value="ufQuery"
+                        placeholder="Digite a UF"
+                        @focus="openUfPicker"
+                        @input="handleUfQueryInput($event.target.value)"
+                        @keydown.enter.prevent="selectFirstFilteredUf"
+                      >
+                      <div v-if="ufPickerOpen" class="uf-picker-menu">
+                        <button
+                          v-for="uf in filteredUfOptions"
+                          :key="uf.code"
+                          type="button"
+                          class="uf-picker-option"
+                          :class="{ 'is-active': fields.ufCode === uf.code }"
+                          @click="syncUfFromSelect(uf.code)"
+                        >
+                          {{ formatUfOption(uf) }}
+                        </button>
+                        <div v-if="filteredUfOptions.length === 0" class="uf-picker-empty">
+                          Nenhuma UF encontrada
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </template>
-                <template v-else>
-                  Use 14 digitos para CNPJ ou 11 digitos + 000 para CPF.
-                </template>
+                <div
+                  v-else
+                  :class="descriptor.name === 'checkDigit' ? 'check-digit-row' : ''"
+                >
+                  <input
+                    :id="descriptor.name"
+                    v-model="fields[descriptor.name]"
+                    class="form-control monospace-value"
+                    :class="{ 'is-invalid': fieldErrorMap[descriptor.name] }"
+                    inputmode="numeric"
+                    :maxlength="FIELD_LENGTHS[descriptor.name]"
+                    @input="syncKeyFromFields(descriptor.name)"
+                  >
+                  <button
+                    v-if="descriptor.name === 'checkDigit'"
+                    type="button"
+                    class="btn btn-outline-secondary"
+                    @click="recalculateCheckDigit"
+                  >
+                    Recalcular DV
+                  </button>
+                </div>
+                <div class="invalid-feedback d-block" v-if="fieldErrorMap[descriptor.name]">
+                  {{ fieldErrorMap[descriptor.name] }}
+                </div>
+                <div
+                  v-if="descriptor.name === 'issuerDocument'"
+                  class="form-text mb-0"
+                >
+                  <template v-if="issuerMeta.usesCpf">
+                    Informe apenas os 11 dígitos do CPF. O padding será aplicado somente na chave.
+                  </template>
+                  <template v-else>
+                    Informe 14 dígitos para CNPJ ou 11 dígitos para CPF.
+                  </template>
+                </div>
               </div>
             </div>
           </div>
@@ -274,7 +403,7 @@ function syncKeyFromFields(changedFieldName) {
                 </div>
               </div>
               <div class="col-md-3">
-                <div class="small text-secondary">Codigo numerico</div>
+                <div class="small text-secondary">Código numérico</div>
                 <div class="fw-semibold monospace-value">{{ parsedAccessKey.numericCode }}</div>
               </div>
             </div>
