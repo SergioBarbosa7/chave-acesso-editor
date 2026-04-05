@@ -13,7 +13,7 @@ A chave é organizada na seguinte sequência, conforme o [manual de integração
 
 # 🧮 Cálculo do Dígito Verificador (cDV)
 
-O **cDV** é calculado com base nos **43 primeiros dígitos**, utilizando o algoritmo de **módulo 11**.
+O **cDV** é calculado com base nos **43 primeiros dígitos**, usando uma sequência cíclica de pesos e a regra do resto da divisão por 11.
 
 ## 📌 Passo a passo
 

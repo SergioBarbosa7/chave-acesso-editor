@@ -13,7 +13,7 @@ The key is organized in the following sequence, according to the [integration ma
 
 # Check Digit Calculation (cDV)
 
-The **cDV** is calculated based on the **first 43 digits**, using the **modulo 11** algorithm.
+The **cDV** is calculated based on the **first 43 digits**, using a cyclic weight sequence and the division remainder rule.
 
 ## Step by Step
 

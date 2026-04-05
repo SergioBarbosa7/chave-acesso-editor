@@ -73,7 +73,7 @@ For a normalized 44-digit key, validate:
 - Document number length.
 - Emission type length.
 - Numeric code length.
-- Check digit using modulo 11.
+- Check digit using the defined weight sequence and remainder rule.
 
 Field-level feedback:
 - The UI should indicate which field is invalid whenever the normalized key has 44 digits.
@@ -87,7 +87,7 @@ Document model:
 
 The check digit must:
 - Be computed from the first 43 digits only.
-- Use modulo 11 with weights from 2 to 9 cycling from right to left.
+- Use weights from 2 to 9 cycling from right to left and the standard remainder rule.
 - Be recalculated only when the user clicks a button.
 
 ## UI Behavior
